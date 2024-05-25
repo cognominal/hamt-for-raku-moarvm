@@ -1,5 +1,10 @@
 # libhamt
 
+This is the original README.
+For the adpatation to raku/MoarVM see [HAMT-for-MoarVM.md](HAMT-for-MoarVM.md)
+
+## blurb
+
 A hash array-mapped trie (HAMT) implementation in C99. A HAMT is a data
 structure that can be used to efficiently implement
 [*persistent*][wiki_persistent_data_structure] associative arrays (aka maps,

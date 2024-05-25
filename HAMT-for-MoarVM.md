@@ -1,9 +1,14 @@
-## blurb
+# HAMT for raku with MoarVM as a backend
+
+## short blurb
 
 We discuss here how to use a modified HAMT with persistable tries and reference
 counted `table`s to create MoarVM reprs for persistent hashes and stack.
 This is part of a work tu support treesitters for raku slangs.
 
+## blurb
+
+[Prerequisite](#prerequisite)
 
 We want to modify `Hamt` to implement a tree sitter with acceptable
 performance for raku. That is, to adapt `Hamt` to raku MoarVM based GC. See
@@ -31,7 +36,7 @@ modify MoarVM to support iterators and reference counting for the news reprs.
 And also create a nqp op, also dynamically loaded, that
 freeze mutable structures of the world. 
 
-## Prerequisite to read this doc
+## Prerequisite
 
 Rakudo is the implementation of raku. Nqp is a simplified raku used to
 implement raku. MoarVM is the preferred raku backend written in C. See below,
@@ -56,7 +61,7 @@ The whole point of treesitters is being responsive to provide timely syntactic
 highlighting when editing code, so we must be careful of the impact of the
 implementation.
 
-# The doc per se
+## More about goals
 
 So we want to use
 [persistent](https://en.wikipedia.org/wiki/Persistent_data_structure)
