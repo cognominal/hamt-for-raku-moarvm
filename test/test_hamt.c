@@ -1285,6 +1285,13 @@ MU_TEST_CASE(test_tree_depth)
     return 0;
 }
 
+#ifdef HAMT_HYBRID
+MU_TEST_CASE(test_trie_freeze)
+{
+    return 0;
+}
+#endif
+
 int mu_tests_run = 0;
 
 MU_TEST_SUITE(test_suite)
@@ -1325,6 +1332,10 @@ MU_TEST_SUITE(test_suite)
     MU_RUN_TEST(test_persistent_setget_one);
     // tree statistics
     MU_RUN_TEST(test_tree_depth);
+ #if defined(HAMT_HYBRID)
+    MU_RUN_TEST(test_trie_freeze);
+ #endif      
+    // 
     return 0;
 }
 

@@ -8,20 +8,25 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined (WITH_TABLE_CACHE)
+#if defined(WITH_TABLE_CACHE)
 #include "cache.h"
 #endif
 
 /* Pointer tagging */
 #define HAMT_TAG_MASK 0x3 /* last two bits */
 #define HAMT_TAG_VALUE 0x1
+#define HAMT_TAG_FROZEN 0x2
 #define tagged(__p) (struct hamt_node *)((uintptr_t)__p | HAMT_TAG_VALUE)
 #define untagged(__p) (struct hamt_node *)((uintptr_t)__p & ~HAMT_TAG_MASK)
 #define is_value(__p) (((uintptr_t)__p & HAMT_TAG_MASK) == HAMT_TAG_VALUE)
+#define freeze(p) p = (hamt_table *) ((uintptr_t)p | HAMT_TAG_FROZEN)
 
+#define is_frozen(__p) (((uintptr_t)__p & HAMT_TAG_MASK) == HAMT_TAG_FROZEN)
+
+#pragma region memory management
 /* Memory management */
 #define ALLOC(ator, size) (ator)->malloc(size, (ator)->ctx)
-#define REALLOC(ator, ptr, size_old, size_new)                             \
+#define REALLOC(ator, ptr, size_old, size_new)                                 \
     (ator)->realloc(ptr, size_old, size_new, (ator)->ctx)
 #define FREE(ator, ptr, size) (ator)->free(ptr, size, (ator)->ctx)
 
@@ -50,17 +55,7 @@ void stdlib_free(void *ptr, const ptrdiff_t size, void *ctx)
 struct hamt_allocator hamt_allocator_default = {stdlib_malloc, stdlib_realloc,
                                                 stdlib_free, NULL};
 
-struct hamt {
-    struct hamt_node *root;
-    size_t size;
-    hamt_key_hash_fn key_hash;
-    hamt_key_cmp_fn key_cmp;
-    struct hamt_allocator *ator;
-#if defined(WITH_TABLE_CACHE)
-    struct hamt_table_cache *cache;
-#endif
-};
-
+#pragma endregion
 /* hashing w/ state management */
 struct hash_state {
     const void *key;
@@ -333,8 +328,8 @@ static const struct hamt_node *insert_table(struct hamt *h,
 
 static struct search_result
 search_recursive(const struct hamt *h, struct hamt_node *anchor,
-                 struct hash_state *hash, hamt_key_cmp_fn cmp_eq, const void *key,
-                 struct hamt_node *path)
+                 struct hash_state *hash, hamt_key_cmp_fn cmp_eq,
+                 const void *key, struct hamt_node *path)
 {
     assert(!is_value(VALUE(anchor)) &&
            "Invariant: path copy requires an internal node");
@@ -404,8 +399,9 @@ const void *hamt_get(const struct hamt *trie, void *key)
 }
 
 static const struct hamt_node *set(struct hamt *h, struct hamt_node *anchor,
-                                   hamt_key_hash_fn hash_fn, hamt_key_cmp_fn cmp_fn,
-                                   void *key, void *value)
+                                   hamt_key_hash_fn hash_fn,
+                                   hamt_key_cmp_fn cmp_fn, void *key,
+                                   void *value)
 {
     struct hash_state *hash = &(struct hash_state){.key = key,
                                                    .hash_fn = hash_fn,
@@ -443,14 +439,46 @@ const void *hamt_set(struct hamt *trie, void *key, void *value)
 }
 
 static struct path_result search(const struct hamt *h, struct hamt_node *anchor,
-                                 struct hash_state *hash, hamt_key_cmp_fn cmp_eq,
-                                 const void *key)
+                                 struct hash_state *hash,
+                                 hamt_key_cmp_fn cmp_eq, const void *key)
 {
     struct path_result pr;
     pr.root = table_allocate(h, 1);
     pr.sr = search_recursive(h, anchor, hash, cmp_eq, key, pr.root);
     return pr;
 }
+
+#ifdef HAMT_HYBRID
+
+/* 
+  trying a new style: 
+    - using typedef
+    - being explicit about the type in the hamt table union
+    - avoiding some macros 
+*/
+
+void hamt_freeze_rec(hamt_table *n) {
+    size_t pos;
+    pos = 0;
+    size_t n_pos = get_popcount(n->index);
+    while (pos++ < n_pos) {
+        struct hamt_node *cur = &(n->ptr)[pos];
+        if (is_value(cur) || is_frozen(cur)) continue;
+        hamt_freeze_rec(&cur->as.table);
+
+    }
+}
+
+
+void hamt_freeze(struct hamt *trie)
+{
+    hamt_freeze_rec(&trie->root->as.table);
+}
+
+
+/* const struct hamt *hamt_hset(const struct hamt *h, void *key, void *value) {}
+ */
+#endif /*  HAMT_HYBRID */
 
 const struct hamt *hamt_pset(const struct hamt *h, void *key, void *value)
 {
@@ -565,7 +593,7 @@ static struct path_result rem(struct hamt *h, struct hamt_node *root,
                               struct hamt_node *anchor, struct hash_state *hash,
                               hamt_key_cmp_fn cmp_eq, const void *key)
 {
-    (void) root; /* silence unused warning */
+    (void)root; /* silence unused warning */
     struct path_result pr;
     pr.root = table_allocate(h, 1);
     pr.rr = rem_recursive(h, pr.root, anchor, hash, cmp_eq, key, pr.root);
@@ -591,12 +619,11 @@ void *hamt_remove(struct hamt *trie, void *key)
 
 const struct hamt *hamt_premove(const struct hamt *h, void *key)
 {
-    struct hash_state *hash =
-        &(struct hash_state){.key = key,
-                             .hash_fn = h->key_hash,
-                             .hash = h->key_hash(key, 0),
-                             .depth = 0,
-                             .shift = 0};
+    struct hash_state *hash = &(struct hash_state){.key = key,
+                                                   .hash_fn = h->key_hash,
+                                                   .hash = h->key_hash(key, 0),
+                                                   .depth = 0,
+                                                   .shift = 0};
     struct hamt *cp = hamt_copy_shallow(h);
     struct path_result pr = rem(cp, cp->root, cp->root, hash, cp->key_cmp, key);
     cp->root = pr.root;
@@ -649,7 +676,7 @@ size_t hamt_size(const struct hamt *trie) { return trie->size; }
 struct hamt_iterator_item {
     struct hamt_node *anchor;
     size_t pos;
-    struct hamt_iterator_item *next;
+    struct hamt_iterator_item *next; /* next deeper in stack, if any */
 };
 
 struct hamt_iterator {
@@ -715,6 +742,7 @@ void hamt_it_delete(struct hamt_iterator *it)
 }
 
 inline bool hamt_it_valid(struct hamt_iterator *it) { return it->cur != NULL; }
+
 
 struct hamt_iterator *hamt_it_next(struct hamt_iterator *it)
 {

@@ -1,10 +1,7 @@
 #
 # Project configuration
 #
-CFGFLAGS := -DWITH_TABLE_CACHE -DWITH_TABLE_CACHE_STATS
-
-#
-# Project structure
+CFGFLAGS := -DWITH_TABLE_CACHE -DWITH_TABLE_CACHE_STATS -DHAMT_HYBRID
 #
 SRCDIRS = src test include
 INCDIRS := $(shell find $(SRCDIRS) -type d)

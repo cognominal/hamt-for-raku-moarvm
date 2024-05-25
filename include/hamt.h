@@ -8,7 +8,17 @@
 typedef int (*hamt_key_cmp_fn)(const void *lhs, const void *rhs);
 typedef uint32_t (*hamt_key_hash_fn)(const void *key, const size_t gen);
 
-struct hamt;
+struct hamt {
+    struct hamt_node *root;
+    size_t size;
+    hamt_key_hash_fn key_hash;
+    hamt_key_cmp_fn key_cmp;
+    struct hamt_allocator *ator;
+#if defined(WITH_TABLE_CACHE)
+    struct hamt_table_cache *cache;
+#endif
+};
+
 
 /*
  * A custom allocator interface. This is similar to the function
